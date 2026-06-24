@@ -1,0 +1,45 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.osrsflipperv2.runelite'
+version = findProperty('pluginVersion') ?: '0.1.0-SNAPSHOT'
+
+repositories {
+    maven {
+        url = uri('https://repo.runelite.net')
+    }
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly "net.runelite:client:${findProperty('runeliteVersion') ?: '1.12.30'}"
+    compileOnly 'javax.inject:javax.inject:1'
+
+    testImplementation platform('org.junit:junit-bom:5.10.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 11
+    options.encoding = 'UTF-8'
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
+
+tasks.processResources {
+    from(projectDir) {
+        include 'runelite-plugin.properties'
+    }
+}
+
+base {
+    archivesName = 'osrsflipperv2-runelite-plugin'
+}
