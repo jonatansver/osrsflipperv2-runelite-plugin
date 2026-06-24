@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.osrsflipperv2.runelite.PluginAuthClientTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-06-24T13:40:14" hostname="DESKTOP-T0HJF93" time="0.246">
-  <properties/>
-  <testcase name="exchangesPairingTokenAndPostsHeartbeat()" classname="com.osrsflipperv2.runelite.PluginAuthClientTest" time="0.246"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>
