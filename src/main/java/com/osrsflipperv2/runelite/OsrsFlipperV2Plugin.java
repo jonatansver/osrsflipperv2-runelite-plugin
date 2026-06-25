@@ -254,7 +254,7 @@ public final class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Pa
 
     private URI resolveBaseUri()
     {
-        return BackendEndpoints.resolveBaseUri(config.backendEnvironment(), config.backendBaseUrl());
+        return BackendEndpoints.resolveBaseUri(config.backendEnvironment());
     }
 
     private String normalizeDeviceName(String deviceName)
@@ -298,7 +298,7 @@ public final class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Pa
         }
 
         panel.renderSnapshot(new ConnectionSnapshot(
-            config.backendEnvironment(),
+            config.backendEnvironment().toString(),
             safeBaseUrlLabel(),
             config.deviceName(),
             config.deviceId(),
@@ -308,16 +308,7 @@ public final class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Pa
 
     private String safeBaseUrlLabel()
     {
-        try
-        {
-            return BackendEndpoints.resolveBaseUri(config.backendEnvironment(), config.backendBaseUrl()).toString();
-        }
-        catch (RuntimeException ex)
-        {
-            return config.backendBaseUrl().isBlank()
-                ? "Configure a backend base URL"
-                : config.backendBaseUrl();
-        }
+        return resolveBaseUri().toString();
     }
 
     private void postLog(String message)

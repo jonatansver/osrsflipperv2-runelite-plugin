@@ -22,11 +22,17 @@ The build output jar is written to `build\libs\osrsflipperv2-runelite-plugin-0.1
 ## Pairing flow
 
 1. Log in to the web app.
-2. Open the plugin pairing settings and create a pairing token.
-3. Paste the token into the plugin side panel.
-4. Keep the default device name or change it before pairing.
-5. Click **Pair device**.
-6. Watch the log area for the exchange and heartbeat result.
+2. Open **Settings** and use **Plugin management** to create a pairing token.
+3. In RuneLite, open the plugin side panel and choose **Backend environment**.
+4. Pick **Staging** or **Production**; the plugin resolves the backend URL automatically.
+5. Paste the pairing token into the side panel.
+6. Keep the default device name or change it before pairing.
+7. Click **Pair device**.
+8. Watch the log area for the exchange and heartbeat result.
+
+## Backend URLs
+
+The plugin uses fixed backend URLs from code instead of a user-editable URL field. This keeps the RuneLite config limited to an environment dropdown and makes the target backend explicit.
 
 ## Stable release flow
 

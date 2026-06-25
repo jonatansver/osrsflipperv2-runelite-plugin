@@ -1,6 +1,5 @@
 package com.osrsflipperv2.runelite;
 
-import java.util.Locale;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
@@ -13,27 +12,19 @@ public interface OsrsFlipperV2Config extends Config
     @ConfigItem(
         keyName = "backendEnvironment",
         name = "Backend environment",
-        description = "Selects the backend profile the plugin should use."
+        description = "Selects the fixed backend hostname the plugin should use.",
+        position = 1
     )
-    default String backendEnvironment()
+    default BackendEnvironment backendEnvironment()
     {
-        return BackendEnvironment.LOCAL.name().toLowerCase(Locale.ROOT);
-    }
-
-    @ConfigItem(
-        keyName = "backendBaseUrl",
-        name = "Backend base URL",
-        description = "Root URL of the OsrsFlipperV2 backend. Leave blank for the local default."
-    )
-    default String backendBaseUrl()
-    {
-        return "";
+        return BackendEnvironment.STAGING;
     }
 
     @ConfigItem(
         keyName = "deviceName",
         name = "Device name",
-        description = "Friendly name sent during pairing."
+        description = "Friendly name sent during pairing.",
+        position = 2
     )
     default String deviceName()
     {

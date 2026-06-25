@@ -1,7 +1,6 @@
 package com.osrsflipperv2.runelite;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.net.URI;
 import org.junit.jupiter.api.Test;
@@ -9,20 +8,14 @@ import org.junit.jupiter.api.Test;
 class BackendEndpointsTest
 {
     @Test
-    void resolvesLocalDefault()
+    void resolvesStagingBaseUrl()
     {
-        assertEquals(URI.create("http://localhost:5000/"), BackendEndpoints.resolveBaseUri("local", ""));
+        assertEquals(URI.create("https://api-staging.osrsflipperv2.com/"), BackendEndpoints.resolveBaseUri(BackendEnvironment.STAGING));
     }
 
     @Test
-    void normalizesExplicitBaseUrl()
+    void resolvesProductionBaseUrl()
     {
-        assertEquals(URI.create("http://example.test/api/"), BackendEndpoints.resolveBaseUri("staging", "http://example.test/api"));
-    }
-
-    @Test
-    void requiresExplicitBaseUrlOutsideLocal()
-    {
-        assertThrows(IllegalStateException.class, () -> BackendEndpoints.resolveBaseUri("production", ""));
+        assertEquals(URI.create("https://api.osrsflipperv2.com/"), BackendEndpoints.resolveBaseUri(BackendEnvironment.PRODUCTION));
     }
 }

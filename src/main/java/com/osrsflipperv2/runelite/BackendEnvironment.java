@@ -1,37 +1,29 @@
 package com.osrsflipperv2.runelite;
 
-import java.util.Locale;
+import java.net.URI;
 
 public enum BackendEnvironment
 {
-    LOCAL,
-    STAGING,
-    PRODUCTION,
-    CUSTOM;
+    STAGING("Staging", URI.create("https://api-staging.osrsflipperv2.com/")),
+    PRODUCTION("Production", URI.create("https://api.osrsflipperv2.com/"));
 
-    public static BackendEnvironment fromConfig(String rawValue)
+    private final String displayName;
+    private final URI baseUri;
+
+    BackendEnvironment(String displayName, URI baseUri)
     {
-        if (rawValue == null || rawValue.isBlank())
-        {
-            return LOCAL;
-        }
+        this.displayName = displayName;
+        this.baseUri = baseUri;
+    }
 
-        String normalized = rawValue.trim().toLowerCase(Locale.ROOT);
-        if ("local".equals(normalized) || "development".equals(normalized) || "dev".equals(normalized))
-        {
-            return LOCAL;
-        }
+    @Override
+    public String toString()
+    {
+        return displayName;
+    }
 
-        if ("staging".equals(normalized) || "stage".equals(normalized))
-        {
-            return STAGING;
-        }
-
-        if ("production".equals(normalized) || "prod".equals(normalized))
-        {
-            return PRODUCTION;
-        }
-
-        return CUSTOM;
+    public URI baseUri()
+    {
+        return baseUri;
     }
 }
