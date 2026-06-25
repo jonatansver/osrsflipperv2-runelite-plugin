@@ -34,8 +34,8 @@ The build output jar is written to `build\libs\osrsflipperv2-runelite-plugin-0.1
 
 The plugin uses fixed backend URLs from code instead of a user-editable URL field:
 
-- Staging: `https://api-staging.osrsflipperv2.com/`
-- Production: `https://api.osrsflipperv2.com/`
+- Staging: `https://osrsflipper-staging-web-03.proudgrass-84e31ac2.centralus.azurecontainerapps.io/`
+- Production: `https://osrsflipper-prod-web-04.azurecontainerapps.io/` (update this if the prod app is recreated)
 
 This keeps the RuneLite config limited to an environment dropdown and makes the target backend explicit.
 

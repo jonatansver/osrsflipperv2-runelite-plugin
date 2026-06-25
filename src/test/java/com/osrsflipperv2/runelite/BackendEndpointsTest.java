@@ -10,12 +10,12 @@ class BackendEndpointsTest
     @Test
     void resolvesStagingBaseUrl()
     {
-        assertEquals(URI.create("https://api-staging.osrsflipperv2.com/"), BackendEndpoints.resolveBaseUri(BackendEnvironment.STAGING));
+        assertEquals(URI.create("https://osrsflipper-staging-web-03.proudgrass-84e31ac2.centralus.azurecontainerapps.io/"), BackendEndpoints.resolveBaseUri(BackendEnvironment.STAGING));
     }
 
     @Test
     void resolvesProductionBaseUrl()
     {
-        assertEquals(URI.create("https://api.osrsflipperv2.com/"), BackendEndpoints.resolveBaseUri(BackendEnvironment.PRODUCTION));
+        assertEquals(URI.create("https://osrsflipper-prod-web-04.azurecontainerapps.io/"), BackendEndpoints.resolveBaseUri(BackendEnvironment.PRODUCTION));
     }
 }
