@@ -32,7 +32,12 @@ The build output jar is written to `build\libs\osrsflipperv2-runelite-plugin-0.1
 
 ## Backend URLs
 
-The plugin uses fixed backend URLs from code instead of a user-editable URL field. This keeps the RuneLite config limited to an environment dropdown and makes the target backend explicit.
+The plugin uses fixed backend URLs from code instead of a user-editable URL field:
+
+- Staging: `https://api-staging.osrsflipperv2.com/`
+- Production: `https://api.osrsflipperv2.com/`
+
+This keeps the RuneLite config limited to an environment dropdown and makes the target backend explicit.
 
 ## Stable release flow
 
