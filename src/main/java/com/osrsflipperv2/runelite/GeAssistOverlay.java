@@ -203,7 +203,6 @@ public final class GeAssistOverlay extends Overlay
     private void renderTradeSetupHighlights(Graphics2D graphics, DashboardSnapshot dashboard)
     {
         int cachedSetupItemId = currentSetupItemIdSupplier.get() == null ? -1 : currentSetupItemIdSupplier.get();
-        ActiveFlipSnapshot flip = null;
 
         Widget setupRoot = getSetupWidget();
         if (setupRoot == null || setupRoot.isHidden())
@@ -224,33 +223,6 @@ public final class GeAssistOverlay extends Overlay
                 + cachedSetupItemId + ", focusedFlip=" + describeFlip(focusedFlipSupplier.get()) + ", root=" + describeWidget(setupRoot));
             dumpSetupWidgetActions(setupRoot);
         }
-        flip = resolveSetupFlip(dashboard, setupItemId);
-        if (flip == null)
-        {
-            flip = focusedFlipSupplier.get();
-        }
-
-        if (flip == null)
-        {
-            logOnce("setup-skip", "GE overlay: skipping setup highlight because no matching flip was found; "
-                + "setupItemId=" + setupItemId + ", cachedSetupItemId=" + cachedSetupItemId);
-            return;
-        }
-
-        if (isSlotLocked(dashboard, flip))
-        {
-            logOnce("setup-skip", "GE overlay: skipping setup highlight because flip is "
-                + describeFlip(flip) + ", locked=true, cachedSetupItemId=" + cachedSetupItemId);
-            return;
-        }
-
-        if (setupItemId > 0 && !isExpectedItemSelected(flip, setupItemId))
-        {
-            logOnce("setup-item-mismatch", "GE overlay: setup item mismatch; resolvedItemId=" + setupItemId
-                + ", cachedSetupItemId=" + cachedSetupItemId
-                + ", selectedFlip=" + describeFlip(flip)
-                + ", root=" + describeWidget(setupRoot));
-        }
 
         Widget quantityWidget = firstNonNull(
             findWidgetByNeedles(setupRoot, "enter quantity", "set quantity"),
@@ -270,47 +242,15 @@ public final class GeAssistOverlay extends Overlay
             dumpSetupWidgetActions(setupRoot);
         }
 
-        long currentPrice = parseWidgetNumber(priceWidget);
-        long currentQuantity = parseWidgetNumber(quantityWidget);
-        long currentPriceVarbit = client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE);
-        long currentQuantityVarbit = client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY);
-        if (currentQuantity <= 0 && currentQuantityVarbit > 0)
-        {
-            currentQuantity = currentQuantityVarbit;
-        }
-        if (currentPrice <= 0 && currentPriceVarbit > 0)
-        {
-            currentPrice = currentPriceVarbit;
-        }
-        long expectedPrice = priceFor(flip);
-        long expectedQuantity = quantityFor(flip);
-
-        boolean quantityMatches = currentQuantity == expectedQuantity && currentQuantity > 0;
-        boolean priceMatches = currentPrice == expectedPrice && currentPrice > 0;
-
-        logOnce("setup-status", "GE overlay: setup values quantity=" + currentQuantity + "/" + expectedQuantity
-            + ", price=" + currentPrice + "/" + expectedPrice
-            + ", itemId=" + setupItemId
+        logOnce("setup-status", "GE overlay: unconditional setup highlight itemId=" + setupItemId
+            + ", focusedFlip=" + describeFlip(focusedFlipSupplier.get())
+            + ", resolvedFlip=" + describeFlip(resolveSetupFlip(dashboard, setupItemId))
             + ", quantityWidget=" + describeWidget(quantityWidget)
             + ", priceWidget=" + describeWidget(priceWidget)
-            + ", quantityVarbit=" + currentQuantityVarbit
-            + ", priceVarbit=" + currentPriceVarbit
-            + ", confirmWidget=" + describeWidget(confirmWidget)
-            + ", quantityMatches=" + quantityMatches
-            + ", priceMatches=" + priceMatches);
+            + ", confirmWidget=" + describeWidget(confirmWidget));
 
-        if (!quantityMatches)
-        {
-            drawWidgetOverlay(graphics, quantityWidget, INPUT_HIGHLIGHT);
-            return;
-        }
-
-        if (!priceMatches)
-        {
-            drawWidgetOverlay(graphics, priceWidget, INPUT_HIGHLIGHT);
-            return;
-        }
-
+        drawWidgetOverlay(graphics, quantityWidget, INPUT_HIGHLIGHT);
+        drawWidgetOverlay(graphics, priceWidget, INPUT_HIGHLIGHT);
         drawWidgetOverlay(graphics, confirmWidget, CONFIRM_HIGHLIGHT);
     }
 

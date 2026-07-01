@@ -478,9 +478,28 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
 
     public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged event)
     {
-        LOGGER.info("GE event: offer changed slot=" + event.getSlot() + ", state=" + event.getOffer().getState()
-            + ", itemId=" + event.getOffer().getItemId());
+        GrandExchangeOffer offer = event.getOffer();
+        String itemName = offer == null || offer.getItemId() <= 0
+            ? "unknown"
+            : Objects.toString(client.getItemDefinition(offer.getItemId()).getName(), "unknown");
+        int quantitySold = offer == null ? -1 : offer.getQuantitySold();
+        int totalQuantity = offer == null ? -1 : offer.getTotalQuantity();
+        int spentGp = offer == null ? -1 : offer.getSpent();
+        long averagePrice = quantitySold > 0 && spentGp >= 0 ? spentGp / quantitySold : -1L;
+
         DashboardSnapshot dashboard = dashboardRef.get();
+        ActiveFlipSnapshot slotFlip = resolveFlipForSlot(dashboard, event.getSlot() + 1);
+        LOGGER.info(
+            "GE event: offer changed slot=" + event.getSlot()
+                + ", itemId=" + (offer == null ? -1 : offer.getItemId())
+                + ", itemName=" + itemName
+                + ", state=" + (offer == null ? "null" : offer.getState())
+                + ", quantitySold=" + quantitySold
+                + ", totalQuantity=" + totalQuantity
+                + ", spentGp=" + spentGp
+                + ", averagePrice=" + averagePrice
+                + ", slotFlip=" + describeFlip(slotFlip)
+                + ", focusedFlip=" + describeFlip(getFocusedFlip()));
         if (dashboard != null)
         {
             dashboard.activeFlips().stream()
@@ -489,7 +508,7 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
                 .ifPresent(flip -> setFocusedFlip(flip.id()));
         }
 
-        executor.submit(() -> syncGrandExchangeOffer(event.getSlot(), event.getOffer()));
+        executor.submit(() -> syncGrandExchangeOffer(event.getSlot(), offer));
         requestChatboxRefresh();
     }
 
@@ -618,6 +637,19 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
                 }
             }, LOGIN_RECONCILE_DELAY.toSeconds(), TimeUnit.SECONDS);
         }
+    }
+
+    private ActiveFlipSnapshot resolveFlipForSlot(DashboardSnapshot dashboard, int slotIndex)
+    {
+        if (dashboard == null)
+        {
+            return null;
+        }
+
+        return dashboard.activeFlips().stream()
+            .filter(flip -> flip != null && flip.slotIndex() == slotIndex)
+            .findFirst()
+            .orElse(null);
     }
 
     private void refreshFromStoredState(boolean triggerRefresh)
@@ -1316,6 +1348,16 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
         }
 
         return dashboard.activeFlips().stream().findFirst().orElse(null);
+    }
+
+    private String describeFlip(ActiveFlipSnapshot flip)
+    {
+        if (flip == null)
+        {
+            return "null";
+        }
+
+        return "slot=" + flip.slotIndex() + ", item=" + flip.itemName() + ", phase=" + flip.effectiveStatusLabel();
     }
 
     private void setFocusedFlip(UUID flipId)
