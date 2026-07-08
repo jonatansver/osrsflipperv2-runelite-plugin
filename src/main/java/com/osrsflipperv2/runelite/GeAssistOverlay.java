@@ -5,13 +5,16 @@ import java.awt.Dimension;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import net.runelite.api.Client;
+import net.runelite.api.InventoryID;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.VarClientStr;
 import net.runelite.api.VarPlayer;
 import net.runelite.api.gameval.VarbitID;
@@ -43,6 +46,7 @@ public final class GeAssistOverlay extends Overlay
     private final ItemManager itemManager;
     private final Supplier<DashboardSnapshot> dashboardSupplier;
     private final Supplier<ActiveFlipSnapshot> focusedFlipSupplier;
+    private final Supplier<Integer> focusedSlotIndexSupplier;
     private final Supplier<List<GeSlotTarget>> slotTargetsSupplier;
     private final Supplier<Integer> currentSetupItemIdSupplier;
     private final Supplier<String> statusSupplier;
@@ -54,6 +58,7 @@ public final class GeAssistOverlay extends Overlay
         ItemManager itemManager,
         Supplier<DashboardSnapshot> dashboardSupplier,
         Supplier<ActiveFlipSnapshot> focusedFlipSupplier,
+        Supplier<Integer> focusedSlotIndexSupplier,
         Supplier<List<GeSlotTarget>> slotTargetsSupplier,
         Supplier<Integer> currentSetupItemIdSupplier,
         Supplier<String> statusSupplier,
@@ -63,6 +68,7 @@ public final class GeAssistOverlay extends Overlay
         this.itemManager = itemManager;
         this.dashboardSupplier = dashboardSupplier;
         this.focusedFlipSupplier = focusedFlipSupplier;
+        this.focusedSlotIndexSupplier = focusedSlotIndexSupplier;
         this.slotTargetsSupplier = slotTargetsSupplier;
         this.currentSetupItemIdSupplier = currentSetupItemIdSupplier;
         this.statusSupplier = statusSupplier;
@@ -156,13 +162,17 @@ public final class GeAssistOverlay extends Overlay
 
         if (isOfferSetupOpen())
         {
-            logOnce("setup-open", "GE overlay: setup window open; focused=" + describeFlip(focusedFlipSupplier.get()));
+            LOGGER.info("GE overlay: setup render open; focused=" + describeFlip(focusedFlipSupplier.get())
+                + ", focusedSlotIndex=" + focusedSlotIndexSupplier.get()
+                + ", setupItemId=" + currentSetupItemIdSupplier.get()
+                + ", status=" + statusSupplier.get());
             renderTradeSetupHighlights(graphics, dashboard);
         }
         else
         {
             logOnce("setup-closed", "GE overlay: offer window closed; rendering slot overlays");
             renderSlotButtonHighlights(graphics, dashboard);
+            renderSlotTextOverlays(graphics, dashboard);
         }
 
         return null;
@@ -200,6 +210,22 @@ public final class GeAssistOverlay extends Overlay
         }
     }
 
+    private void renderSlotTextOverlays(Graphics2D graphics, DashboardSnapshot dashboard)
+    {
+        for (int slotIndex = 1; slotIndex <= 8; slotIndex++)
+        {
+            Widget slotWidget = getSlotWidget((short) slotIndex);
+            if (slotWidget == null || slotWidget.isHidden() || slotWidget.getBounds() == null)
+            {
+                continue;
+            }
+
+            Rectangle bounds = slotWidget.getBounds();
+            drawSlotAnchorDot(graphics, bounds);
+            drawSlotTextOverlay(graphics, bounds, "test", new Color(51, 160, 250), TEXT, slotIndex);
+        }
+    }
+
     private void renderTradeSetupHighlights(Graphics2D graphics, DashboardSnapshot dashboard)
     {
         int cachedSetupItemId = currentSetupItemIdSupplier.get() == null ? -1 : currentSetupItemIdSupplier.get();
@@ -222,7 +248,53 @@ public final class GeAssistOverlay extends Overlay
             logOnce("setup-item-missing", "GE overlay: setup item id could not be resolved; cachedSetupItemId="
                 + cachedSetupItemId + ", focusedFlip=" + describeFlip(focusedFlipSupplier.get()) + ", root=" + describeWidget(setupRoot));
             dumpSetupWidgetActions(setupRoot);
+            return;
         }
+
+        ActiveFlipSnapshot setupFlip = resolveSetupFlip(dashboard, setupItemId);
+        if (setupFlip == null)
+        {
+            logOnce("setup-flip-missing", "GE overlay: no flip resolved for setup itemId=" + setupItemId
+                + ", cachedSetupItemId=" + cachedSetupItemId + ", focusedFlip=" + describeFlip(focusedFlipSupplier.get())
+                + ", root=" + describeWidget(setupRoot));
+            dumpSetupWidgetActions(setupRoot);
+        }
+
+        ActiveFlipSnapshot targetFlip = null;
+        Integer focusedSlotIndex = focusedSlotIndexSupplier.get();
+        if (dashboard != null && focusedSlotIndex != null)
+        {
+            targetFlip = resolveFlipForSlot(dashboard, focusedSlotIndex);
+        }
+        if (targetFlip == null)
+        {
+            targetFlip = focusedFlipSupplier.get();
+        }
+
+        logOnce("setup-target:" + setupItemId,
+            "GE overlay: setup target flip=" + describeFlip(targetFlip)
+                + ", setupFlip=" + describeFlip(setupFlip)
+                + ", focusedFlip=" + describeFlip(focusedFlipSupplier.get())
+                + ", focusedSlotIndex=" + focusedSlotIndex
+                + ", root=" + describeWidget(setupRoot));
+
+        if (targetFlip == null)
+        {
+            LOGGER.info("GE overlay: setup target missing; focusedFlip=" + describeFlip(focusedFlipSupplier.get())
+                + ", focusedSlotIndex=" + focusedSlotIndex + ", setupItemId=" + setupItemId);
+            return;
+        }
+
+        boolean itemSelected = isExpectedItemSelected(targetFlip);
+        long expectedQuantity = quantityFor(targetFlip);
+        long expectedPrice = priceFor(targetFlip);
+        long currentQuantity = client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_QUANTITY);
+        long currentPrice = client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_PRICE);
+        boolean quantityMatches = expectedQuantity > 0 && currentQuantity == expectedQuantity;
+        boolean priceMatches = expectedPrice > 0 && currentPrice == expectedPrice;
+        boolean showQuantityOverlay = itemSelected && !quantityMatches;
+        boolean showPriceOverlay = itemSelected && !priceMatches;
+        boolean showConfirmOverlay = itemSelected && quantityMatches && priceMatches;
 
         Widget quantityWidget = firstNonNull(
             findWidgetByNeedles(setupRoot, "enter quantity", "set quantity"),
@@ -242,16 +314,66 @@ public final class GeAssistOverlay extends Overlay
             dumpSetupWidgetActions(setupRoot);
         }
 
-        logOnce("setup-status", "GE overlay: unconditional setup highlight itemId=" + setupItemId
-            + ", focusedFlip=" + describeFlip(focusedFlipSupplier.get())
-            + ", resolvedFlip=" + describeFlip(resolveSetupFlip(dashboard, setupItemId))
+        logOnce("setup-status:" + setupItemId + ":" + currentQuantity + ":" + currentPrice + ":" + showQuantityOverlay + ":" + showPriceOverlay + ":" + showConfirmOverlay,
+            "GE overlay: setup highlight itemId=" + setupItemId
+            + ", flip=" + describeFlip(setupFlip)
+            + ", expectedQuantity=" + expectedQuantity
+            + ", currentQuantity=" + currentQuantity
+            + ", quantityMatches=" + quantityMatches
+            + ", expectedPrice=" + expectedPrice
+            + ", currentPrice=" + currentPrice
+            + ", priceMatches=" + priceMatches
+            + ", itemSelected=" + itemSelected
+            + ", showQuantityOverlay=" + showQuantityOverlay
+            + ", showPriceOverlay=" + showPriceOverlay
+            + ", showConfirmOverlay=" + showConfirmOverlay
             + ", quantityWidget=" + describeWidget(quantityWidget)
             + ", priceWidget=" + describeWidget(priceWidget)
             + ", confirmWidget=" + describeWidget(confirmWidget));
 
-        drawWidgetOverlay(graphics, quantityWidget, INPUT_HIGHLIGHT);
-        drawWidgetOverlay(graphics, priceWidget, INPUT_HIGHLIGHT);
-        drawWidgetOverlay(graphics, confirmWidget, CONFIRM_HIGHLIGHT);
+        if (showQuantityOverlay)
+        {
+            drawWidgetOverlay(graphics, quantityWidget, INPUT_HIGHLIGHT, true);
+        }
+
+        if (showPriceOverlay)
+        {
+            drawWidgetOverlay(graphics, priceWidget, INPUT_HIGHLIGHT, true);
+        }
+
+        if (showConfirmOverlay)
+        {
+            drawWidgetOverlay(graphics, confirmWidget, CONFIRM_HIGHLIGHT, true);
+        }
+
+        if (targetFlip.isSellPhase() && !itemSelected)
+        {
+            LOGGER.info("GE overlay: invoking sell highlight; targetFlip=" + describeFlip(targetFlip)
+                + ", setupItemId=" + setupItemId
+                + ", focusedSlotIndex=" + focusedSlotIndex
+                + ", itemSelected=" + itemSelected
+                + ", currentQuantity=" + currentQuantity
+                + ", currentPrice=" + currentPrice);
+            renderSellInventoryHighlight(graphics, targetFlip, setupItemId);
+        }
+    }
+
+    private ActiveFlipSnapshot resolveFlipForSlot(DashboardSnapshot dashboard, int slotIndex)
+    {
+        if (dashboard == null || slotIndex <= 0)
+        {
+            return null;
+        }
+
+        for (ActiveFlipSnapshot candidate : dashboard.activeFlips())
+        {
+            if (candidate != null && candidate.slotIndex() == slotIndex)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private ActiveFlipSnapshot resolveSetupFlip(DashboardSnapshot dashboard, int setupItemId)
@@ -286,21 +408,131 @@ public final class GeAssistOverlay extends Overlay
 
     private void drawWidgetOverlay(Graphics2D graphics, Widget widget, Color color)
     {
+        drawWidgetOverlay(graphics, widget, color, false);
+    }
+
+    private void drawWidgetOverlay(Graphics2D graphics, Widget widget, Color color, boolean preferInnerControl)
+    {
         if (widget == null || widget.isHidden())
         {
             return;
         }
 
-        Rectangle bounds = resolveOverlayBounds(widget);
+        Rectangle bounds = preferInnerControl ? resolveInnerControlBounds(widget) : resolveOverlayBounds(widget);
         if (bounds == null)
         {
             return;
+        }
+
+        if (preferInnerControl)
+        {
+            bounds = tightenInnerControlBounds(bounds);
         }
 
         graphics.setColor(color);
         graphics.fillRoundRect(bounds.x, bounds.y, bounds.width, bounds.height, 8, 8);
         graphics.setColor(color.darker());
         graphics.drawRoundRect(bounds.x, bounds.y, bounds.width, bounds.height, 8, 8);
+    }
+
+    private Rectangle resolveInnerControlBounds(Widget widget)
+    {
+        if (widget == null)
+        {
+            return null;
+        }
+
+        Rectangle bounds = widget.getBounds();
+        if (bounds == null)
+        {
+            return null;
+        }
+
+        Rectangle best = bounds;
+        best = chooseMoreSpecificBounds(best, resolveBestChildBounds(widget.getChildren()));
+        best = chooseMoreSpecificBounds(best, resolveBestChildBounds(widget.getDynamicChildren()));
+        best = chooseMoreSpecificBounds(best, resolveBestChildBounds(widget.getStaticChildren()));
+        best = chooseMoreSpecificBounds(best, resolveBestChildBounds(widget.getNestedChildren()));
+        return best;
+    }
+
+    private Rectangle resolveBestChildBounds(Widget[] widgets)
+    {
+        if (widgets == null)
+        {
+            return null;
+        }
+
+        Rectangle best = null;
+        for (Widget child : widgets)
+        {
+            if (child == null || child.isHidden())
+            {
+                continue;
+            }
+
+            Rectangle candidate = child.getBounds();
+            if (candidate == null)
+            {
+                continue;
+            }
+
+            best = chooseMoreSpecificBounds(best, candidate);
+            Rectangle descendant = resolveBestChildBounds(child.getChildren());
+            best = chooseMoreSpecificBounds(best, descendant);
+            descendant = resolveBestChildBounds(child.getDynamicChildren());
+            best = chooseMoreSpecificBounds(best, descendant);
+            descendant = resolveBestChildBounds(child.getStaticChildren());
+            best = chooseMoreSpecificBounds(best, descendant);
+            descendant = resolveBestChildBounds(child.getNestedChildren());
+            best = chooseMoreSpecificBounds(best, descendant);
+        }
+
+        return best;
+    }
+
+    private Rectangle chooseMoreSpecificBounds(Rectangle current, Rectangle candidate)
+    {
+        if (candidate == null)
+        {
+            return current;
+        }
+
+        if (current == null)
+        {
+            return candidate;
+        }
+
+        long currentArea = (long) current.width * current.height;
+        long candidateArea = (long) candidate.width * candidate.height;
+        if (candidateArea <= 0 || candidateArea >= currentArea)
+        {
+            return current;
+        }
+
+        boolean candidateLooksLikeInnerControl = candidate.width <= current.width
+            && candidate.height < current.height
+            && candidate.width >= Math.max(1, current.width / 2);
+        return candidateLooksLikeInnerControl ? candidate : current;
+    }
+
+    private Rectangle tightenInnerControlBounds(Rectangle bounds)
+    {
+        if (bounds == null)
+        {
+            return null;
+        }
+
+        int width = bounds.width;
+        int height = Math.max(1, (int) Math.round(width * 0.68));
+        if (height >= bounds.height)
+        {
+            return bounds;
+        }
+
+        int x = bounds.x;
+        int y = bounds.y + Math.max(0, (bounds.height - height) / 2);
+        return new Rectangle(x, y, width, height);
     }
 
     private Rectangle resolveOverlayBounds(Widget widget)
@@ -674,6 +906,256 @@ public final class GeAssistOverlay extends Overlay
     private long quantityFor(ActiveFlipSnapshot flip)
     {
         return flip.isSellPhase() ? Math.max(flip.actualBoughtQuantity(), flip.plannedQuantity()) : Math.max(flip.plannedQuantity(), 0);
+    }
+
+    private void renderSellInventoryHighlight(Graphics2D graphics, ActiveFlipSnapshot flip, int setupItemId)
+    {
+        Widget inventoryRoot = client.getWidget(WidgetInfo.GRAND_EXCHANGE_INVENTORY_ITEMS_CONTAINER);
+        if (inventoryRoot == null || inventoryRoot.isHidden())
+        {
+            inventoryRoot = client.getWidget(WidgetInfo.INVENTORY);
+        }
+        if (inventoryRoot == null || inventoryRoot.isHidden())
+        {
+            logOnce("sell-inventory-root-missing", "GE overlay: inventory root missing while trying to highlight sell item; flip="
+                + describeFlip(flip) + ", setupItemId=" + setupItemId);
+            return;
+        }
+
+        ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+        int inventoryItemCount = inventory == null || inventory.getItems() == null ? -1 : inventory.getItems().length;
+        List<Widget> inventoryItems = new ArrayList<>();
+        collectInventoryItemWidgets(inventoryRoot, inventoryItems);
+        List<net.runelite.http.api.item.ItemPrice> matches = itemManager.search(flip.itemName());
+
+        logOnce(
+            "sell-inventory-state:" + setupItemId + ":" + inventoryItemCount + ":" + inventoryItems.size(),
+            "GE overlay: sell inventory scan flip=" + describeFlip(flip)
+                + ", setupItemId=" + setupItemId
+                + ", focusedSlotIndex=" + focusedSlotIndexSupplier.get()
+                + ", inventoryRoot=" + describeWidget(inventoryRoot)
+                + ", inventoryContainerItems=" + inventoryItemCount
+                + ", collectedWidgets=" + inventoryItems.size()
+                + ", matchedItemIds=" + matches.size());
+
+        boolean highlighted = false;
+        if (!inventoryItems.isEmpty())
+        {
+            for (Widget itemWidget : inventoryItems)
+            {
+                if (itemWidget == null || itemWidget.isHidden())
+                {
+                    continue;
+                }
+
+                int itemId = itemWidget.getItemId();
+                int itemQuantity = itemWidget.getItemQuantity();
+                if (itemId <= 0)
+                {
+                    continue;
+                }
+
+                boolean itemMatches = itemId == setupItemId || matches.stream().anyMatch(match -> match.getId() == itemId);
+                if (!itemMatches)
+                {
+                    continue;
+                }
+
+                Rectangle bounds = itemWidget.getBounds();
+                if (bounds == null)
+                {
+                    continue;
+                }
+
+                logOnce("sell-inventory-hit:" + setupItemId + ":" + itemId,
+                    "GE overlay: highlighting inventory widget for sell flip=" + describeFlip(flip)
+                        + ", itemId=" + itemId
+                        + ", itemQuantity=" + itemQuantity
+                        + ", widget=" + describeWidget(itemWidget));
+                graphics.setColor(new Color(80, 255, 80, 95));
+                graphics.fillRoundRect(bounds.x, bounds.y, bounds.width, bounds.height, 8, 8);
+                graphics.setColor(new Color(80, 255, 80, 220));
+                graphics.drawRoundRect(bounds.x, bounds.y, bounds.width, bounds.height, 8, 8);
+                highlighted = true;
+            }
+        }
+
+        if (!highlighted && inventory != null && inventory.getItems() != null)
+        {
+            int[] matchIds = matches.stream().mapToInt(net.runelite.http.api.item.ItemPrice::getId).toArray();
+            for (int slot = 0; slot < inventory.getItems().length; slot++)
+            {
+                net.runelite.api.Item item = inventory.getItems()[slot];
+                if (item == null || item.getId() <= 0)
+                {
+                    continue;
+                }
+
+                boolean itemMatches = item.getId() == setupItemId;
+                if (!itemMatches)
+                {
+                    for (int matchId : matchIds)
+                    {
+                        if (matchId == item.getId())
+                        {
+                            itemMatches = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!itemMatches)
+                {
+                    continue;
+                }
+
+                Rectangle bounds = resolveInventorySlotBounds(inventoryRoot.getBounds(), slot);
+                if (bounds == null)
+                {
+                    continue;
+                }
+
+                logOnce("sell-inventory-grid-hit:" + setupItemId + ":" + slot,
+                    "GE overlay: highlighting inferred inventory slot for sell flip=" + describeFlip(flip)
+                        + ", slot=" + slot
+                        + ", itemId=" + item.getId()
+                        + ", itemQuantity=" + item.getQuantity()
+                        + ", slotBounds=" + bounds);
+                graphics.setColor(new Color(80, 255, 80, 95));
+                graphics.fillRoundRect(bounds.x, bounds.y, bounds.width, bounds.height, 8, 8);
+                graphics.setColor(new Color(80, 255, 80, 220));
+                graphics.drawRoundRect(bounds.x, bounds.y, bounds.width, bounds.height, 8, 8);
+                highlighted = true;
+                break;
+            }
+        }
+
+        if (!highlighted)
+        {
+            logOnce("sell-inventory-nohit:" + setupItemId,
+                "GE overlay: no inventory highlight matched sell flip=" + describeFlip(flip)
+                    + ", setupItemId=" + setupItemId
+                    + ", inventoryRoot=" + describeWidget(inventoryRoot)
+                    + ", inventoryContainer=" + (inventory == null ? "null" : Integer.toString(inventory.getItems().length)));
+        }
+    }
+
+    private void collectInventoryItemWidgets(Widget widget, List<Widget> matches)
+    {
+        if (widget == null || widget.isHidden())
+        {
+            return;
+        }
+
+        if (widget.getItemId() > 0 && widget.getBounds() != null)
+        {
+            matches.add(widget);
+        }
+
+        Widget[] children = widget.getChildren();
+        if (children != null)
+        {
+            for (Widget child : children)
+            {
+                collectInventoryItemWidgets(child, matches);
+            }
+        }
+
+        Widget[] dynamicChildren = widget.getDynamicChildren();
+        if (dynamicChildren != null)
+        {
+            for (Widget child : dynamicChildren)
+            {
+                collectInventoryItemWidgets(child, matches);
+            }
+        }
+
+        Widget[] staticChildren = widget.getStaticChildren();
+        if (staticChildren != null)
+        {
+            for (Widget child : staticChildren)
+            {
+                collectInventoryItemWidgets(child, matches);
+            }
+        }
+
+        Widget[] nestedChildren = widget.getNestedChildren();
+        if (nestedChildren != null)
+        {
+            for (Widget child : nestedChildren)
+            {
+                collectInventoryItemWidgets(child, matches);
+            }
+        }
+    }
+
+    private Rectangle resolveInventorySlotBounds(Rectangle inventoryBounds, int slotIndex)
+    {
+        if (inventoryBounds == null || slotIndex < 0)
+        {
+            return null;
+        }
+
+        int columns = 4;
+        int rows = 7;
+        int slotWidth = Math.max(1, inventoryBounds.width / columns);
+        int slotHeight = Math.max(1, inventoryBounds.height / rows);
+        int column = slotIndex % columns;
+        int row = slotIndex / columns;
+        if (row >= rows)
+        {
+            return null;
+        }
+
+        return new Rectangle(
+            inventoryBounds.x + (column * slotWidth),
+            inventoryBounds.y + (row * slotHeight),
+            slotWidth,
+            slotHeight);
+    }
+
+    private void drawSlotTextOverlay(Graphics2D graphics, Rectangle slotBounds, String text, Color background, Color foreground)
+    {
+        drawSlotTextOverlay(graphics, slotBounds, text, background, foreground, -1);
+    }
+
+    private void drawSlotTextOverlay(Graphics2D graphics, Rectangle slotBounds, String text, Color background, Color foreground, int slotIndex)
+    {
+        if (slotBounds == null || text == null || text.isBlank())
+        {
+            return;
+        }
+
+        FontMetrics metrics = graphics.getFontMetrics();
+        int width = Math.max(1, slotBounds.width);
+        int height = 22;
+        int x = slotBounds.x;
+        int y = slotBounds.y;
+        int textX = x + ((width - metrics.stringWidth(text)) / 2);
+        int textY = y + ((height - metrics.getHeight()) / 2) + metrics.getAscent();
+
+        graphics.setColor(background);
+        graphics.fillRoundRect(x, y, width, height, 8, 8);
+        graphics.setColor(background.darker());
+        graphics.drawRoundRect(x, y, width, height, 8, 8);
+        graphics.setColor(foreground);
+        graphics.drawString(text, textX, textY);
+    }
+
+    private void drawSlotAnchorDot(Graphics2D graphics, Rectangle slotBounds)
+    {
+        if (slotBounds == null)
+        {
+            return;
+        }
+
+        int dotSize = 4;
+        int x = slotBounds.x + 1;
+        int y = slotBounds.y + 1;
+        graphics.setColor(new Color(255, 255, 0, 220));
+        graphics.fillOval(x, y, dotSize, dotSize);
+        graphics.setColor(new Color(120, 120, 0, 220));
+        graphics.drawOval(x, y, dotSize, dotSize);
     }
 
     private Widget getSlotWidget(short slotIndex)

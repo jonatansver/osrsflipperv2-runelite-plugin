@@ -174,6 +174,14 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
                     return getFocusedFlip();
                 }
             },
+            new Supplier<Integer>()
+            {
+                @Override
+                public Integer get()
+                {
+                    return getFocusedSlotIndex();
+                }
+            },
             new Supplier<List<GeSlotTarget>>()
             {
                 @Override
@@ -486,6 +494,8 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
         int totalQuantity = offer == null ? -1 : offer.getTotalQuantity();
         int spentGp = offer == null ? -1 : offer.getSpent();
         long averagePrice = quantitySold > 0 && spentGp >= 0 ? spentGp / quantitySold : -1L;
+        long liveQuantity = client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_QUANTITY);
+        long livePrice = client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_PRICE);
 
         DashboardSnapshot dashboard = dashboardRef.get();
         ActiveFlipSnapshot slotFlip = resolveFlipForSlot(dashboard, event.getSlot() + 1);
@@ -498,6 +508,8 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
                 + ", totalQuantity=" + totalQuantity
                 + ", spentGp=" + spentGp
                 + ", averagePrice=" + averagePrice
+                + ", liveQuantity=" + liveQuantity
+                + ", livePrice=" + livePrice
                 + ", slotFlip=" + describeFlip(slotFlip)
                 + ", focusedFlip=" + describeFlip(getFocusedFlip()));
         if (dashboard != null)
@@ -523,9 +535,22 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
 
     public void onVarbitChanged(VarbitChanged event)
     {
-        if (event.getVarbitId() == net.runelite.api.Varbits.GE_OFFER_CREATION_TYPE)
+        int varbitId = event.getVarbitId();
+        if (varbitId == net.runelite.api.Varbits.GE_OFFER_CREATION_TYPE
+            || varbitId == net.runelite.api.gameval.VarbitID.GE_NEWOFFER_PRICE
+            || varbitId == net.runelite.api.gameval.VarbitID.GE_NEWOFFER_QUANTITY
+            || varbitId == net.runelite.api.gameval.VarPlayerID.TRADINGPOST_SEARCH)
         {
-            LOGGER.info("GE event: offer creation type changed");
+            Integer focusedSlot = getFocusedSlotIndex();
+            LOGGER.info(
+                "GE event: varbit changed id=" + varbitId
+                    + ", selectedItemId=" + client.getVarpValue(net.runelite.api.gameval.VarPlayerID.TRADINGPOST_SEARCH)
+                    + ", currentItemId=" + client.getVarpValue(net.runelite.api.VarPlayer.CURRENT_GE_ITEM)
+                    + ", quantity=" + client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_QUANTITY)
+                    + ", price=" + client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_PRICE)
+                    + ", offerType=" + client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_TYPE)
+                    + ", focusedFlip=" + describeFlip(getFocusedFlip())
+                    + ", selectedSlotFlip=" + describeFlip(focusedSlot == null ? null : resolveFlipForSlot(dashboardRef.get(), focusedSlot)));
             requestChatboxRefresh();
         }
     }
@@ -616,8 +641,19 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
 
         int itemId = client.getVarpValue(net.runelite.api.gameval.VarPlayerID.TRADINGPOST_SEARCH);
         currentSetupItemId.set(itemId);
-        LOGGER.info("GE event: setup build fired, cached itemId=" + itemId
-            + ", offerType=" + client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_TYPE));
+        long quantity = client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_QUANTITY);
+        long price = client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_PRICE);
+        ActiveFlipSnapshot focusedFlip = getFocusedFlip();
+        Integer focusedSlot = getFocusedSlotIndex();
+        ActiveFlipSnapshot slotFlip = focusedSlot == null ? null : resolveFlipForSlot(dashboardRef.get(), focusedSlot);
+        String itemName = itemId <= 0 ? "unknown" : Objects.toString(client.getItemDefinition(itemId).getName(), "unknown");
+        LOGGER.info("GE event: setup build fired, selectedItemId=" + itemId
+            + ", selectedItemName=" + itemName
+            + ", quantity=" + quantity
+            + ", price=" + price
+            + ", offerType=" + client.getVarbitValue(net.runelite.api.gameval.VarbitID.GE_NEWOFFER_TYPE)
+            + ", focusedFlip=" + describeFlip(focusedFlip)
+            + ", selectedSlotFlip=" + describeFlip(slotFlip));
         requestChatboxRefresh();
     }
 
@@ -650,6 +686,11 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
             .filter(flip -> flip != null && flip.slotIndex() == slotIndex)
             .findFirst()
             .orElse(null);
+    }
+
+    private Integer getFocusedSlotIndex()
+    {
+        return focusedSlotIndex.get();
     }
 
     private void refreshFromStoredState(boolean triggerRefresh)
@@ -851,25 +892,7 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
             return;
         }
 
-        long spendGp = Math.max(offer.getSpent(), 0);
-        DashboardSnapshot dashboard = dashboardRef.get();
-        String lastKnown = (dashboard == null ? Instant.now() : flip.updatedAtUtc()).toString();
-        URI baseUri = resolveBaseUri();
-        List<ActiveFlipSnapshot> updated = flipperApiClient.updateActiveFlipBuy(
-            baseUri,
-            config.deviceToken(),
-            flip.id(),
-            new FlipperApiClient.UpdateBuyRequest(
-                boughtQuantity,
-                spendGp,
-                Instant.now().toString(),
-                null,
-                concludeBuy,
-                "runelite",
-                UUID.randomUUID().toString(),
-                lastKnown));
-        updateDashboardAfterMutation(updated);
-        postLog("Saved buy progress for " + flip.itemName() + " (" + boughtQuantity + "/" + flip.plannedQuantity() + ")");
+        postLog("Observed buy progress for " + flip.itemName() + " (" + boughtQuantity + "/" + flip.plannedQuantity() + ")");
     }
 
     private void cancelBuy(ActiveFlipSnapshot flip) throws IOException, InterruptedException
@@ -892,22 +915,7 @@ public class OsrsFlipperV2Plugin extends Plugin implements OsrsFlipperV2Panel.Co
             return;
         }
 
-        long receiveGp = Math.max(offer.getSpent(), 0);
-        URI baseUri = resolveBaseUri();
-        List<ActiveFlipSnapshot> updated = flipperApiClient.updateActiveFlipSell(
-            baseUri,
-            config.deviceToken(),
-            flip.id(),
-            new FlipperApiClient.UpdateSellRequest(
-                soldQuantity,
-                receiveGp,
-                Instant.now().toString(),
-                concludeSell,
-                "runelite",
-                UUID.randomUUID().toString(),
-                flip.updatedAtUtc().toString()));
-        updateDashboardAfterMutation(updated);
-        postLog("Saved sell progress for " + flip.itemName() + " (" + soldQuantity + "/" + currentSellQuantity(flip) + ")");
+        postLog("Observed sell progress for " + flip.itemName() + " (" + soldQuantity + "/" + currentSellQuantity(flip) + ")");
     }
 
     private void refreshSellPrice(ActiveFlipSnapshot flip) throws IOException, InterruptedException
